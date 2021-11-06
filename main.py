@@ -2,6 +2,7 @@ from abc import ABC, abstractmethod
 from collections import defaultdict
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
+import json
 
 
 class LintResult:
@@ -224,6 +225,20 @@ class Directories(PatternLintable):
         return results
 
 
+class JsonContent(Lintable):
+
+    def lint(self, context: LintContext) -> LinterResults:
+        results = LinterResults()
+
+        if not context.path.is_file():
+            results.add(
+                context.path,
+                Error(context.path, self,
+                      f"Can only check JSON content for files:  {context.path}"))
+
+        return results
+
+
 class Linter:
 
     def __init__(self,
@@ -278,6 +293,10 @@ def file(**kwargs):
     return File(**kwargs)
 
 
+def json_content():
+    return JsonContent()
+
+
 def main():
     linter = define_linter(
         strict_directory_contents=False,
@@ -285,7 +304,9 @@ def main():
             file(path="requirements.txt"),
             directory(path="venv", optional=False),
             directory(path="sample_data", optional=False, children=[
-                files(glob="*.json")
+                files(glob="*.json", children=[
+                    json_content()
+                ])
             ]),
             directory(path="optional", optional=True),
             directory(path="must", optional=False),
