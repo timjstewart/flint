@@ -35,3 +35,7 @@ Creates a linter that can operate on files to ensure they have well-formed JSON.
 ## follows_schema
 
 Creates a linter that can operate on JSON content to ensure that it adheres to a JSON schema.
+
+## shell_command
+
+Creates a linter that runs a shell command on a file and raises errors if the command fails.

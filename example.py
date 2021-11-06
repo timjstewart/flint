@@ -9,6 +9,7 @@ from flint import (
     json_content,
     define_linter,
     follows_schema,
+    shell_command,
 )
 
 
@@ -18,8 +19,14 @@ def main():
         # linted by one of the defined linters, will not cause an error.
         strict_directory_contents=True,
         children=[
-            file(path="requirements.txt"),
-            directory(path="venv", optional=False),
+            file(
+                path="requirements.txt",
+                children=[
+                    shell_command(["funions", "%s"]),
+                    shell_command(["wc", "-l", "%s"]),
+                ],
+            ),
+            directory(path="venv"),
             directory(
                 path="sample_data",
                 optional=False,
@@ -38,15 +45,15 @@ def main():
                     )
                 ],
             ),
-            directory(path="optional", optional=True),
+            directories(glob="sample_data/subdir_*", min_matches=1, max_matches=3),
             directory(path="json_schemas", optional=True),
+            directory(path=".git", optional=False),
+            directory(path="optional", optional=True),
             directory(path=".mypy_cache", optional=True),
             directory(path="must", optional=False),
-            directory(path=".git", optional=False),
             files(glob="*.py", optional=True),
             file(path=".gitignore", optional=True),
             file(path=".flake8", optional=True),
-            directories(glob="sample_data/subdir_*", min_matches=1, max_matches=3),
             files(glob="logfile.*.log", min_matches=3),
         ],
     )
