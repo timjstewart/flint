@@ -69,6 +69,12 @@ class LintContext:
     def __init__(self, cwd: Path) -> None:
         self.cwd = cwd
 
+    def with_cwd(self, directory: Path) -> Optional['LintContext']:
+        if not directory.is_dir():
+            return None
+        else:
+            return LintContext(directory)
+
     def cd(self, directory: str) -> Optional['LintContext']:
         new_dir = Path(self.cwd / directory)
         if not new_dir.is_dir():
@@ -120,17 +126,68 @@ class File(Lintable):
 
 class Files(Lintable):
 
-    def __init__(self, glob: str) -> None:
+    def __init__(self,
+                 glob: str,
+                 max: Optional[int] = None,
+                 min: Optional[int] = None,
+                 children: Optional[List[Lintable]] = None
+                 ) -> None:
         self.glob = glob
+        self.min = min
+        self.max = max
+        self.children = list(children) if children else []
 
     def lint(self, context: LintContext) -> LinterResults:
-        return {}
+        results: LinterResults = defaultdict(list)
+
+        matches = [match for match in context.cwd.glob(self.glob)
+                   if match.is_file()]
+
+        for match in matches:
+            for child in self.children:
+                results = merge_results(results, child.lint(context))
+
+        return results
 
 
 class Directories(Lintable):
 
+    def __init__(self,
+                 glob: str,
+                 max: Optional[int] = None,
+                 min: Optional[int] = None,
+                 children: Optional[List[Lintable]] = None
+                 ) -> None:
+        self.glob = glob
+        self.max = max
+        self.min = min
+        self.children = list(children) if children else []
+
     def lint(self, context: LintContext) -> LinterResults:
-        return {}
+        results: LinterResults = defaultdict(list)
+
+        matches = [match for match in context.cwd.glob(self.glob)
+                   if match.is_dir()]
+
+        if self.min is not None and len(matches) < self.min:
+            results[context.cwd].append(
+                Error(context.cwd, self,
+                      f"'{self.glob}' should have had at least {self.min} "
+                      f"matches but it only had {len(matches)} matches."))
+
+        if self.max is not None and len(matches) > self.max:
+            results[context.cwd].append(
+                Error(context.cwd, self,
+                      f"'{self.glob}' should have had at most {self.max} "
+                      f"matches but it had {len(matches)} matches."))
+
+        for match in matches:
+            child_context = context.with_cwd(match)
+            if child_context:
+                for child in self.children:
+                    results = merge_results(results, child.lint(child_context))
+
+        return results
 
 
 class Linter:
@@ -176,7 +233,7 @@ def directory(**kwargs):
 
 
 def directories(**args):
-    return Directories()
+    return Directories(**args)
 
 
 def files(**kwargs):
@@ -198,9 +255,9 @@ def main():
             ]),
             directory(path="optional", optional=True),
             directory(path="must", optional=False),
-            directory(path=".gitr", optional=False),
-            directories(glob="subdir_*", min=1),
-            files(glob="logfile.*.log")
+            directory(path=".git", optional=False),
+            directories(glob="sample_data/subdir_*", min=1, max=3),
+            files(glob="logfile.*.log", min=3)
         ])
 
     for obj, results in (linter.run(Path.cwd())).items():
