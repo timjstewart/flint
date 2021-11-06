@@ -46,11 +46,12 @@ def main():
     )
 
     exit_code = 0
+
     for obj, results in (linter.run(Path.cwd())).items():
         if results:
             exit_code = 1
             for result in results:
-                print(f"  {str(result)}")
+                print(f"{str(result)}")
 
     sys.exit(exit_code)
 
