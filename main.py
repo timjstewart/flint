@@ -190,7 +190,7 @@ class Files(PatternLintable):
 
         for match in matches:
             for child in self.children:
-                results.update(child.lint(context))
+                results.update(child.lint(context.with_file(match)))
 
         return results
 
@@ -235,6 +235,12 @@ class JsonContent(Lintable):
                     f"Can only check JSON content for files:  {context.path}",
                 ),
             )
+
+        json_text = context.path.read_text()
+        try:
+            json_obj = json.loads(json_text)
+        except json.decoder.JSONDecodeError as ex:
+            context.error(str(ex), results)
 
         return results
 
