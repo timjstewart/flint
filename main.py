@@ -6,8 +6,7 @@ import json
 
 
 class LintResult:
-
-    def __init__(self, path: Path, lintable: Optional['Lintable']) -> None:
+    def __init__(self, path: Path, lintable: Optional["Lintable"]) -> None:
         self.path = path
         self.lintable = lintable
 
@@ -24,13 +23,10 @@ class LinterResults:
     file or directory
     """
 
-    def __init__(
-            self,
-            path_map: Optional[Dict[Path, List[LintResult]]] = None
-            ) -> None:
+    def __init__(self, path_map: Optional[Dict[Path, List[LintResult]]] = None) -> None:
         self.path_map = path_map if path_map else defaultdict(list)
 
-    def update(self, other: 'LinterResults') -> None:
+    def update(self, other: "LinterResults") -> None:
         for k, v in other.path_map.items():
             self.path_map[k].extend(v)
 
@@ -38,20 +34,14 @@ class LinterResults:
         self.path_map[path].append(result)
 
     def results(self) -> List[LintResult]:
-        return [result for results in self.path_map.values()
-                for result in results]
+        return [result for results in self.path_map.values() for result in results]
 
     def items(self) -> List[Tuple[Path, List[LintResult]]]:
         return list(self.path_map.items())
 
 
 class Error(LintResult):
-
-    def __init__(self,
-                 path: Path,
-                 lintable: Optional['Lintable'],
-                 error: str
-                 ) -> None:
+    def __init__(self, path: Path, lintable: Optional["Lintable"], error: str) -> None:
         super().__init__(path, lintable)
         self.error = error
 
@@ -60,12 +50,9 @@ class Error(LintResult):
 
 
 class Warning(LintResult):
-
-    def __init__(self,
-                 path: Path,
-                 lintable: Optional['Lintable'],
-                 warning: str
-                 ) -> None:
+    def __init__(
+        self, path: Path, lintable: Optional["Lintable"], warning: str
+    ) -> None:
         super().__init__(path, lintable)
         self.warning = warning
 
@@ -78,70 +65,78 @@ class Skipped(LintResult):
 
 
 class LintContext:
-
-    def __init__(self, path: Path) -> None:
+    def __init__(self, path: Path, results: Optional[LinterResults] = None) -> None:
         self.path = path
+        self.results = results or LinterResults()
 
-    def with_path(self, path: Path) -> Optional['LintContext']:
+    def with_path(self, path: Path) -> Optional["LintContext"]:
         return LintContext(path)
 
-    def in_directory(self, directory: Path) -> Optional['LintContext']:
+    def in_directory(self, directory: Path) -> Optional["LintContext"]:
         return LintContext(directory) if directory.is_dir() else None
 
-    def with_file(self, file: Path) -> Optional['LintContext']:
+    def with_file(self, file: Path) -> Optional["LintContext"]:
         return LintContext(file) if file.is_file() else None
 
-    def cd(self, directory: str) -> Optional['LintContext']:
-        new_dir = Path(self.path/directory)
+    def cd(self, directory: str) -> Optional["LintContext"]:
+        new_dir = Path(self.path / directory)
         return LintContext(new_dir) if new_dir.is_dir() else None
+
+    def warning(self, message: str, results: LinterResults) -> None:
+        results.add(self.path, Warning(self.path, None, message))
+
+    def error(self, message: str, results: LinterResults) -> None:
+        results.add(self.path, Warning(self.path, None, message))
 
 
 class Lintable(ABC):
-
     @abstractmethod
     def lint(self, context: LintContext) -> LinterResults:
         pass
 
 
 class PatternLintable(Lintable):
-
     def __init__(
-            self,
-            glob: str,
-            max: Optional[int] = None,
-            min: Optional[int] = None
-            ) -> None:
+        self, glob: str, max: Optional[int] = None, min: Optional[int] = None
+    ) -> None:
         self.glob = glob
         self.max = max
         self.min = min
 
-    def _check_count(self,
-                     context: LintContext,
-                     num_lintables: int
-                     ) -> LinterResults:
+    def _check_count(self, context: LintContext, num_lintables: int) -> LinterResults:
         results = LinterResults()
 
         if self.min is not None and num_lintables < self.min:
             results.add(
                 context.path,
-                Error(context.path, self,
-                      f"'{self.glob}' should have had at least {self.min} "
-                      f"matches but it only had {num_lintables} matches."))
+                Error(
+                    context.path,
+                    self,
+                    f"'{self.glob}' should have had at least {self.min} "
+                    f"matches but it only had {num_lintables} matches.",
+                ),
+            )
 
         if self.max is not None and num_lintables > self.max:
             results.add(
                 context.path,
-                Error(context.path, self,
-                      f"'{self.glob}' should have had at most {self.max} "
-                      f"matches but it had {num_lintables} matches."))
+                Error(
+                    context.path,
+                    self,
+                    f"'{self.glob}' should have had at most {self.max} "
+                    f"matches but it had {num_lintables} matches.",
+                ),
+            )
         return results
 
 
 class Directory(Lintable):
-
-    def __init__(self, path: str,
-                 optional: bool = False,
-                 children: Optional[List[Lintable]] = None) -> None:
+    def __init__(
+        self,
+        path: str,
+        optional: bool = False,
+        children: Optional[List[Lintable]] = None,
+    ) -> None:
         self.path = path
         self.optional = optional
         self.children = list(children) if children else []
@@ -151,9 +146,14 @@ class Directory(Lintable):
         my_context = context.cd(self.path)
         if not my_context:
             if not self.optional:
-                results.add(context.path, Error(
-                    context.path, self,
-                    f"required directory '{self.path}' does not exist"))
+                results.add(
+                    context.path,
+                    Error(
+                        context.path,
+                        self,
+                        f"required directory '{self.path}' does not exist",
+                    ),
+                )
             return results
 
         for child in self.children:
@@ -162,7 +162,6 @@ class Directory(Lintable):
 
 
 class File(Lintable):
-
     def __init__(self, path: str, optional: bool = False) -> None:
         self.path = path
         self.optional = optional
@@ -172,21 +171,20 @@ class File(Lintable):
 
 
 class Files(PatternLintable):
-
-    def __init__(self,
-                 glob: str,
-                 min: Optional[int] = None,
-                 max: Optional[int] = None,
-                 children: Optional[List[Lintable]] = None
-                 ) -> None:
+    def __init__(
+        self,
+        glob: str,
+        min: Optional[int] = None,
+        max: Optional[int] = None,
+        children: Optional[List[Lintable]] = None,
+    ) -> None:
         super().__init__(glob, min, max)
         self.children = list(children) if children else []
 
     def lint(self, context: LintContext) -> LinterResults:
         results = LinterResults()
 
-        matches = [match for match in context.path.glob(self.glob)
-                   if match.is_file()]
+        matches = [match for match in context.path.glob(self.glob) if match.is_file()]
 
         results.update(self._check_count(context, len(matches)))
 
@@ -198,21 +196,20 @@ class Files(PatternLintable):
 
 
 class Directories(PatternLintable):
-
-    def __init__(self,
-                 glob: str,
-                 max: Optional[int] = None,
-                 min: Optional[int] = None,
-                 children: Optional[List[Lintable]] = None
-                 ) -> None:
+    def __init__(
+        self,
+        glob: str,
+        max: Optional[int] = None,
+        min: Optional[int] = None,
+        children: Optional[List[Lintable]] = None,
+    ) -> None:
         super().__init__(glob, min, max)
         self.children = list(children) if children else []
 
     def lint(self, context: LintContext) -> LinterResults:
         results = LinterResults()
 
-        matches = [match for match in context.path.glob(self.glob)
-                   if match.is_dir()]
+        matches = [match for match in context.path.glob(self.glob) if match.is_dir()]
 
         results.update(self._check_count(context, len(matches)))
 
@@ -226,33 +223,33 @@ class Directories(PatternLintable):
 
 
 class JsonContent(Lintable):
-
     def lint(self, context: LintContext) -> LinterResults:
         results = LinterResults()
 
         if not context.path.is_file():
             results.add(
                 context.path,
-                Error(context.path, self,
-                      f"Can only check JSON content for files:  {context.path}"))
+                Error(
+                    context.path,
+                    self,
+                    f"Can only check JSON content for files:  {context.path}",
+                ),
+            )
 
         return results
 
 
 class Linter:
-
-    def __init__(self,
-                 children: List[Lintable],
-                 strict_directory_contents: bool = True
-                 ) -> None:
+    def __init__(
+        self, children: List[Lintable], strict_directory_contents: bool = True
+    ) -> None:
         self.children = list(children)
         self.strict_directory_contents = strict_directory_contents
 
     def run(self, root: Path) -> LinterResults:
         results = LinterResults()
 
-        linted_map: Dict[Path, bool] = {
-            entry: False for entry in root.iterdir()}
+        linted_map: Dict[Path, bool] = {entry: False for entry in root.iterdir()}
 
         # Lint selected files and directories
         context = LintContext(root)
@@ -267,8 +264,7 @@ class Linter:
             for fso, linted in linted_map.items():
                 if not linted:
                     fso_type = "directory" if fso.is_dir() else "file"
-                    results.add(root,
-                                Warning(fso, None, f"unexpected {fso_type}"))
+                    results.add(root, Warning(fso, None, f"unexpected {fso_type}"))
 
         return results
 
@@ -303,17 +299,18 @@ def main():
         children=[
             file(path="requirements.txt"),
             directory(path="venv", optional=False),
-            directory(path="sample_data", optional=False, children=[
-                files(glob="*.json", children=[
-                    json_content()
-                ])
-            ]),
+            directory(
+                path="sample_data",
+                optional=False,
+                children=[files(glob="*.json", children=[json_content()])],
+            ),
             directory(path="optional", optional=True),
             directory(path="must", optional=False),
             directory(path=".git", optional=False),
             directories(glob="sample_data/subdir_*", min=1, max=3),
-            files(glob="logfile.*.log", min=3)
-        ])
+            files(glob="logfile.*.log", min=3),
+        ],
+    )
 
     for obj, results in (linter.run(Path.cwd())).items():
         print(f"{obj}:")
@@ -321,5 +318,5 @@ def main():
             print(f"  {str(result)}")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
