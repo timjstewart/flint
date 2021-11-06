@@ -338,24 +338,24 @@ class _Linter:
         return context.results
 
 
-def define_linter(children: List[_Lintable], **kwargs):
-    return _Linter(children=children, **kwargs)
+def define_linter(children: List[_Lintable], *args, **kwargs):
+    return _Linter(children=children, *args, **kwargs)
 
 
-def directory(**kwargs):
-    return _Directory(**kwargs)
+def directory(*args, **kwargs):
+    return _Directory(*args, **kwargs)
 
 
-def directories(**args):
-    return _Directories(**args)
+def directories(*args, **kwargs):
+    return _Directories(*args, **kwargs)
 
 
-def files(**kwargs):
-    return _Files(**kwargs)
+def files(*args, **kwargs):
+    return _Files(*args, **kwargs)
 
 
-def file(**kwargs):
-    return _File(**kwargs)
+def file(*args, **kwargs):
+    return _File(*args, **kwargs)
 
 
 def json_content(*args, **kwargs):
