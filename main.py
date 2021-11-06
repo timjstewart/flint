@@ -102,6 +102,40 @@ class Lintable(ABC):
         pass
 
 
+class PatternLintable(Lintable):
+
+    def __init__(
+            self,
+            glob: str,
+            max: Optional[int] = None,
+            min: Optional[int] = None
+            ) -> None:
+        self.glob = glob
+        self.max = max
+        self.min = min
+
+    def _check_count(self,
+                     context: LintContext,
+                     num_lintables: int
+                     ) -> LinterResults:
+        results = LinterResults()
+
+        if self.min is not None and num_lintables < self.min:
+            results.add(
+                context.path,
+                Error(context.path, self,
+                      f"'{self.glob}' should have had at least {self.min} "
+                      f"matches but it only had {num_lintables} matches."))
+
+        if self.max is not None and num_lintables > self.max:
+            results.add(
+                context.path,
+                Error(context.path, self,
+                      f"'{self.glob}' should have had at most {self.max} "
+                      f"matches but it had {num_lintables} matches."))
+        return results
+
+
 class Directory(Lintable):
 
     def __init__(self, path: str,
@@ -136,17 +170,15 @@ class File(Lintable):
         return LinterResults()
 
 
-class Files(Lintable):
+class Files(PatternLintable):
 
     def __init__(self,
                  glob: str,
-                 max: Optional[int] = None,
                  min: Optional[int] = None,
+                 max: Optional[int] = None,
                  children: Optional[List[Lintable]] = None
                  ) -> None:
-        self.glob = glob
-        self.min = min
-        self.max = max
+        super().__init__(glob, min, max)
         self.children = list(children) if children else []
 
     def lint(self, context: LintContext) -> LinterResults:
@@ -155,6 +187,8 @@ class Files(Lintable):
         matches = [match for match in context.path.glob(self.glob)
                    if match.is_file()]
 
+        results.update(self._check_count(context, len(matches)))
+
         for match in matches:
             for child in self.children:
                 results.update(child.lint(context))
@@ -162,7 +196,7 @@ class Files(Lintable):
         return results
 
 
-class Directories(Lintable):
+class Directories(PatternLintable):
 
     def __init__(self,
                  glob: str,
@@ -170,9 +204,7 @@ class Directories(Lintable):
                  min: Optional[int] = None,
                  children: Optional[List[Lintable]] = None
                  ) -> None:
-        self.glob = glob
-        self.max = max
-        self.min = min
+        super().__init__(glob, min, max)
         self.children = list(children) if children else []
 
     def lint(self, context: LintContext) -> LinterResults:
@@ -181,19 +213,7 @@ class Directories(Lintable):
         matches = [match for match in context.path.glob(self.glob)
                    if match.is_dir()]
 
-        if self.min is not None and len(matches) < self.min:
-            results.add(
-                context.path,
-                Error(context.path, self,
-                      f"'{self.glob}' should have had at least {self.min} "
-                      f"matches but it only had {len(matches)} matches."))
-
-        if self.max is not None and len(matches) > self.max:
-            results.add(
-                context.path,
-                Error(context.path, self,
-                      f"'{self.glob}' should have had at most {self.max} "
-                      f"matches but it had {len(matches)} matches."))
+        results.update(self._check_count(context, len(matches)))
 
         for match in matches:
             child_context = context.with_path(match)
