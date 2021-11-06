@@ -1,8 +1,12 @@
 from abc import ABC, abstractmethod
 from collections import defaultdict
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Union
 import json
+
+import jsonschema
+
+JSON = Dict[str, Union[str, int, List["JSON"], "JSON"]]
 
 
 class LintResult:
@@ -95,7 +99,7 @@ class LintContext:
         self.results.add(self.path, Warning(self.path, None, message))
 
     def error(self, message: str) -> None:
-        self.results.add(self.path, Warning(self.path, None, message))
+        self.results.add(self.path, Error(self.path, None, message))
 
     def touch_path(self) -> None:
         self.results.path_map[self.path].extend([])
@@ -172,6 +176,7 @@ class Files(PatternLintable):
         glob: str,
         min: Optional[int] = None,
         max: Optional[int] = None,
+        optional: Optional[bool] = False,
         children: Optional[List[Lintable]] = None,
     ) -> None:
         super().__init__(glob, min, max)
@@ -180,11 +185,13 @@ class Files(PatternLintable):
     def lint(self, context: LintContext) -> None:
         matches = [match for match in context.path.glob(self.glob) if match.is_file()]
 
-        self._check_count(context, len(matches))
-
         for match in matches:
+            match_context = context.with_file(match)
+            match_context.touch_path()
             for child in self.children:
-                child.lint(context.with_file(match))
+                child.lint(match_context)
+
+        self._check_count(context, len(matches))
 
 
 class Directories(PatternLintable):
@@ -210,16 +217,57 @@ class Directories(PatternLintable):
                     child.lint(child_context)
 
 
+class JsonRule(ABC):
+    @abstractmethod
+    def lint(self, json_obj: JSON, context: LintContext) -> None:
+        pass
+
+
+class JsonFollowsSchema(JsonRule):
+
+    SCHEMA_CACHE: Dict[Path, JSON] = {}
+
+    def __init__(self, schema_filename: str) -> None:
+        self.schema_filename = schema_filename
+
+    def lint(self, json_obj: JSON, context: LintContext) -> None:
+        path = Path(self.schema_filename)
+        if not path.is_absolute():
+            path = Path(Path.cwd() / self.schema_filename)
+
+        if path not in self.SCHEMA_CACHE:
+            try:
+                self.SCHEMA_CACHE[path] = json.loads(path.read_text())
+            except json.decoder.JSONDecodeError as ex:
+                context.error(f"Malformed JSON found in schema file: {path} - {ex}")
+                return
+            except FileNotFoundError as ex:
+                context.error(f"Could not find JSON schema file: {path} - {ex}")
+                return
+
+        schema = self.SCHEMA_CACHE[path]
+        try:
+            jsonschema.validate(instance=json_obj, schema=schema)
+        except jsonschema.exceptions.ValidationError as ex:
+            context.error(f"{ex.message} JSON: {ex.instance}")
+
+
 class JsonContent(Lintable):
+    def __init__(self, children: Optional[List[JsonRule]] = None) -> None:
+        self.children = list(children) if children else []
+
     def lint(self, context: LintContext) -> None:
         if not context.path.is_file():
             context.error(f"Can only check JSON content for files:  {context.path}")
 
         json_text = context.path.read_text()
         try:
-            json_obj = json.loads(json_text)
+            json_object = json.loads(json_text)
         except json.decoder.JSONDecodeError as ex:
             context.error(str(ex))
+        else:
+            for child in self.children:
+                child.lint(json_object, context)
 
 
 class Linter:
@@ -271,8 +319,12 @@ def file(**kwargs):
     return File(**kwargs)
 
 
-def json_content():
-    return JsonContent()
+def json_content(*args, **kwargs):
+    return JsonContent(*args, **kwargs)
+
+
+def follows_schema(schema_file_name: str) -> JsonRule:
+    return JsonFollowsSchema(schema_file_name)
 
 
 def main():
@@ -284,12 +336,25 @@ def main():
             directory(
                 path="sample_data",
                 optional=False,
-                children=[files(glob="*.json", children=[json_content()])],
+                children=[
+                    files(
+                        glob="*.json",
+                        children=[
+                            json_content(
+                                children=[follows_schema("json_schemas/menu.schema")]
+                            )
+                        ],
+                    )
+                ],
             ),
             directory(path="optional", optional=True),
+            directory(path="json_schemas", optional=True),
+            directory(path=".mypy_cache", optional=True),
             directory(path="must", optional=False),
             directory(path=".git", optional=False),
+            files(glob="*.py", optional=True),
             file(path=".gitignore", optional=True),
+            file(path=".flake8", optional=True),
             directories(glob="sample_data/subdir_*", min=1, max=3),
             files(glob="logfile.*.log", min=3),
         ],
@@ -297,7 +362,6 @@ def main():
 
     for obj, results in (linter.run(Path.cwd())).items():
         if results:
-            print(f"{obj}:")
             for result in results:
                 print(f"  {str(result)}")
 

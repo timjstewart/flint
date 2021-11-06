@@ -1,0 +1,43 @@
+{
+    "type": "object",
+    "title": "Menu",
+    "properties": {
+        "menu": {
+            "type": "object",
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "items" : {
+                        "type": "object",
+                        "properties": {
+                            "id": {
+                                "type": "string"
+                            },
+                            "label": {
+                                "type": "string"
+                            }
+                        },
+                        "required": [
+                            "id"
+                        ],
+                        "additionalProperties": false
+
+
+                    }
+                },
+                "header": {
+                    "type": "string"
+                }
+            },
+            "required": [
+                "items",
+                "header"
+            ],
+            "additionalProperties": false
+        }
+    },
+    "required": [
+        "menu"
+    ],
+    "additionalProperties": false
+}
