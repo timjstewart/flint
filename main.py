@@ -84,6 +84,9 @@ class LintContext:
     def with_file(self, file: Path) -> Optional["LintContext"]:
         return LintContext(file, self.results) if file.is_file() else None
 
+    def with_filename(self, filename: str) -> Optional["LintContext"]:
+        return self.with_file(Path(self.path, filename))
+
     def cd(self, directory: str) -> Optional["LintContext"]:
         new_dir = Path(self.path / directory)
         return LintContext(new_dir, self.results) if new_dir.is_dir() else None
@@ -93,6 +96,9 @@ class LintContext:
 
     def error(self, message: str) -> None:
         self.results.add(self.path, Warning(self.path, None, message))
+
+    def touch_path(self) -> None:
+        self.results.path_map[self.path].extend([])
 
 
 class Lintable(ABC):
@@ -146,6 +152,7 @@ class Directory(Lintable):
                 )
             return
 
+        my_context.touch_path()
         for child in self.children:
             child.lint(my_context)
 
@@ -156,7 +163,7 @@ class File(Lintable):
         self.optional = optional
 
     def lint(self, context: LintContext) -> None:
-        pass
+        context.with_filename(self.path).touch_path()
 
 
 class Files(PatternLintable):
@@ -239,7 +246,7 @@ class Linter:
             for fso, linted in linted_map.items():
                 if not linted:
                     fso_type = "directory" if fso.is_dir() else "file"
-                    context.warning(f"unexpected {fso_type}")
+                    context.warning(f"unexpected {fso_type} '{fso}'")
 
         return context.results
 
@@ -270,7 +277,7 @@ def json_content():
 
 def main():
     linter = define_linter(
-        strict_directory_contents=False,
+        strict_directory_contents=True,
         children=[
             file(path="requirements.txt"),
             directory(path="venv", optional=False),
@@ -282,15 +289,17 @@ def main():
             directory(path="optional", optional=True),
             directory(path="must", optional=False),
             directory(path=".git", optional=False),
+            file(path=".gitignore", optional=True),
             directories(glob="sample_data/subdir_*", min=1, max=3),
             files(glob="logfile.*.log", min=3),
         ],
     )
 
     for obj, results in (linter.run(Path.cwd())).items():
-        print(f"{obj}:")
-        for result in results:
-            print(f"  {str(result)}")
+        if results:
+            print(f"{obj}:")
+            for result in results:
+                print(f"  {str(result)}")
 
 
 if __name__ == "__main__":
