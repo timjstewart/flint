@@ -14,6 +14,8 @@ from flint import (
 
 def main():
     linter = define_linter(
+        # If you set this to False, any files or directories that are not
+        # linted by one of the defined linters, will not cause an error.
         strict_directory_contents=True,
         children=[
             file(path="requirements.txt"),
@@ -22,9 +24,13 @@ def main():
                 path="sample_data",
                 optional=False,
                 children=[
+                    # sample data contains some .json files so we specify a
+                    # child linter to lint those files.
                     files(
                         glob="*.json",
                         children=[
+                            # Make sure the JSON in these files are well-formed
+                            # and that they follow a jsonschema schema.
                             json_content(
                                 children=[follows_schema("json_schemas/menu.schema")]
                             )
@@ -40,8 +46,8 @@ def main():
             files(glob="*.py", optional=True),
             file(path=".gitignore", optional=True),
             file(path=".flake8", optional=True),
-            directories(glob="sample_data/subdir_*", min=1, max=3),
-            files(glob="logfile.*.log", min=3),
+            directories(glob="sample_data/subdir_*", min_matches=1, max_matches=3),
+            files(glob="logfile.*.log", min_matches=3),
         ],
     )
 
