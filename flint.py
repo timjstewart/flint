@@ -10,10 +10,12 @@ import jsonschema
 JSON = Dict[str, Union[str, int, List["JSON"], "JSON"]]
 
 
-class LintResult:
-    def __init__(self, path: Path, lintable: Optional["Lintable"]) -> None:
+class LintResult(ABC):
+    """
+    A single result from a linting operation.
+    """
+    def __init__(self, path: Path) -> None:
         self.path = path
-        self.lintable = lintable
 
     def __repr__(self):
         return f"{self.__class__.__name__}({self.path})"
@@ -25,7 +27,7 @@ class LintResult:
 class LinterResults:
     """
     A map from the linted file or directory to a list of LintResults for that
-    file or directory
+    file or directory.
     """
     def __init__(self, path_map: Optional[Dict[Path, List[LintResult]]] = None) -> None:
         self.path_map = path_map if path_map else defaultdict(list)
@@ -48,26 +50,34 @@ class LinterResults:
 
 
 class Error(LintResult):
-    def __init__(self, path: Path, lintable: Optional["Lintable"], error: str) -> None:
-        super().__init__(path, lintable)
+    """
+    An error discovered by a linting operation.
+    """
+    def __init__(self, path: Path, error: str) -> None:
+        super().__init__(path)
         self.error = error
 
     def __str__(self):
-        return f"{self.__class__.__name__} in: {self.path}: {self.error}"
+        return f"{self.__class__.__name__.lower()}: {self.path}: {self.error}"
 
 
 class Warning(LintResult):
-    def __init__(
-        self, path: Path, lintable: Optional["Lintable"], warning: str
-    ) -> None:
-        super().__init__(path, lintable)
+    """
+    An error discovered by a linting operation.
+    """
+    def __init__(self, path: Path, warning: str) -> None:
+        super().__init__(path)
         self.warning = warning
 
     def __str__(self):
-        return f"{self.__class__.__name__} in: {self.path}: {self.warning}"
+        return f"{self.__class__.__name__.lower()}: {self.path}: {self.warning}"
 
 
 class LintContext:
+    """
+    Keeps track of LinterResults encountered during linting and what file or
+    directory is currently being linted.
+    """
     def __init__(self, path: Path, results: Optional[LinterResults] = None) -> None:
         self.path = path
         self.results = results or LinterResults()
@@ -92,22 +102,33 @@ class LintContext:
         return LintContext(new_dir, self.results) if new_dir.is_dir() else None
 
     def warning(self, message: str) -> None:
-        self.results.add(self.path, Warning(self.path, None, message))
+        self.results.add(self.path, Warning(self.path, message))
 
     def error(self, message: str) -> None:
-        self.results.add(self.path, Error(self.path, None, message))
+        self.results.add(self.path, Error(self.path, message))
 
     def touch_path(self) -> None:
+        """
+        Records that the current file or directory was handled by at least linter.
+
+        This is so that we can detect any files that had no linters applied to
+        them when the Linter's strict_directory_contents flag is set to True.
+        """
         self.results.path_map[self.path].extend([])
 
 
 class Lintable(ABC):
+    """An object that can be linted"""
     @abstractmethod
     def lint(self, context: LintContext) -> None:
         pass
 
 
-class PatternLintable(Lintable):
+class LintableGlobMatches(Lintable):
+    """
+    Multiple objects can match a glob. This object encapsulates logic for
+    limits on matches.
+    """
     def __init__(
         self, glob: str, max: Optional[int] = None, min: Optional[int] = None
     ) -> None:
@@ -115,7 +136,7 @@ class PatternLintable(Lintable):
         self.max = max
         self.min = min
 
-    def _check_count(self, context: LintContext, num_lintables: int) -> LintContext:
+    def _check_limits(self, context: LintContext, num_lintables: int) -> LintContext:
 
         if self.min is not None and num_lintables < self.min:
             context.error(
@@ -133,6 +154,11 @@ class PatternLintable(Lintable):
 
 
 class Directory(Lintable):
+    """
+    A directory that can be linted.
+
+    Its contents can also be linted if any children are supplied.
+    """
     def __init__(
         self,
         path: str,
@@ -166,7 +192,10 @@ class File(Lintable):
         context.with_filename(self.path).touch_path()
 
 
-class Files(PatternLintable):
+class Files(LintableGlobMatches):
+    """
+    One or more files that match a glob, that can be linted.
+    """
     def __init__(
         self,
         glob: str,
@@ -187,10 +216,10 @@ class Files(PatternLintable):
             for child in self.children:
                 child.lint(match_context)
 
-        self._check_count(context, len(matches))
+        self._check_limits(context, len(matches))
 
 
-class Directories(PatternLintable):
+class Directories(LintableGlobMatches):
     def __init__(
         self,
         glob: str,
@@ -204,7 +233,7 @@ class Directories(PatternLintable):
     def lint(self, context: LintContext) -> None:
         matches = [match for match in context.path.glob(self.glob) if match.is_dir()]
 
-        self._check_count(context, len(matches))
+        self._check_limits(context, len(matches))
 
         for match in matches:
             child_context = context.with_path(match)
