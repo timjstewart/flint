@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from collections import defaultdict
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 
 class LintResult:
@@ -17,19 +17,31 @@ class LintResult:
         return f"{self.__class__.__name__}: {self.path}"
 
 
-# A map from the linted file or directory to a list of LintResults for that
-# file or directory
-LinterResults = Dict[Path, List[LintResult]]
+class LinterResults:
+    """
+    A map from the linted file or directory to a list of LintResults for that
+    file or directory
+    """
 
+    def __init__(
+            self,
+            path_map: Optional[Dict[Path, List[LintResult]]] = None
+            ) -> None:
+        self.path_map = path_map if path_map else defaultdict(list)
 
-def merge_results(lhs: LinterResults,
-                  rhs: LinterResults) -> LinterResults:
-    results: LinterResults = defaultdict(list)
-    for k, v in lhs.items():
-        results[k].extend(v)
-    for k, v in rhs.items():
-        results[k].extend(v)
-    return results
+    def update(self, other: 'LinterResults') -> None:
+        for k, v in other.path_map.items():
+            self.path_map[k].extend(v)
+
+    def add(self, path: Path, result: LintResult) -> None:
+        self.path_map[path].append(result)
+
+    def results(self) -> List[LintResult]:
+        return [result for results in self.path_map.values()
+                for result in results]
+
+    def items(self) -> List[Tuple[Path, List[LintResult]]]:
+        return list(self.path_map.items())
 
 
 class Error(LintResult):
@@ -100,17 +112,17 @@ class Directory(Lintable):
         self.children = list(children) if children else []
 
     def lint(self, context: LintContext) -> LinterResults:
-        results: LinterResults = defaultdict(list)
+        results = LinterResults()
         my_context = context.cd(self.path)
         if not my_context:
             if not self.optional:
-                results[context.cwd].append(Error(
+                results.add(context.cwd, Error(
                     context.cwd, self,
                     f"required directory '{self.path}' does not exist"))
             return results
 
         for child in self.children:
-            results = merge_results(results, child.lint(my_context))
+            results.update(child.lint(my_context))
         return results
 
 
@@ -121,7 +133,7 @@ class File(Lintable):
         self.optional = optional
 
     def lint(self, context: LintContext) -> LinterResults:
-        return {}
+        return LinterResults()
 
 
 class Files(Lintable):
@@ -138,14 +150,14 @@ class Files(Lintable):
         self.children = list(children) if children else []
 
     def lint(self, context: LintContext) -> LinterResults:
-        results: LinterResults = defaultdict(list)
+        results = LinterResults()
 
         matches = [match for match in context.cwd.glob(self.glob)
                    if match.is_file()]
 
         for match in matches:
             for child in self.children:
-                results = merge_results(results, child.lint(context))
+                results.update(child.lint(context))
 
         return results
 
@@ -164,19 +176,21 @@ class Directories(Lintable):
         self.children = list(children) if children else []
 
     def lint(self, context: LintContext) -> LinterResults:
-        results: LinterResults = defaultdict(list)
+        results = LinterResults()
 
         matches = [match for match in context.cwd.glob(self.glob)
                    if match.is_dir()]
 
         if self.min is not None and len(matches) < self.min:
-            results[context.cwd].append(
+            results.add(
+                context.cwd,
                 Error(context.cwd, self,
                       f"'{self.glob}' should have had at least {self.min} "
                       f"matches but it only had {len(matches)} matches."))
 
         if self.max is not None and len(matches) > self.max:
-            results[context.cwd].append(
+            results.add(
+                context.cwd,
                 Error(context.cwd, self,
                       f"'{self.glob}' should have had at most {self.max} "
                       f"matches but it had {len(matches)} matches."))
@@ -185,7 +199,7 @@ class Directories(Lintable):
             child_context = context.with_cwd(match)
             if child_context:
                 for child in self.children:
-                    results = merge_results(results, child.lint(child_context))
+                    results.update(child.lint(child_context))
 
         return results
 
@@ -200,7 +214,7 @@ class Linter:
         self.strict_directory_contents = strict_directory_contents
 
     def run(self, root: Path) -> LinterResults:
-        results: LinterResults = defaultdict(list)
+        results = LinterResults()
 
         linted_map: Dict[Path, bool] = {
             entry: False for entry in root.iterdir()}
@@ -209,17 +223,17 @@ class Linter:
         context = LintContext(root)
         for child in self.children:
             lint_results = child.lint(context)
-            results = merge_results(results, lint_results)
-            for result in lint_results:
-                linted_map[result] = True
+            results.update(lint_results)
+            for result in lint_results.results():
+                linted_map[result.path] = True
 
         # Report unexpected entries in the directory
         if self.strict_directory_contents:
             for fso, linted in linted_map.items():
                 if not linted:
                     fso_type = "directory" if fso.is_dir() else "file"
-                    results[root].append(
-                        Warning(fso, None, f"unexpected {fso_type}"))
+                    results.add(root,
+                                Warning(fso, None, f"unexpected {fso_type}"))
 
         return results
 
