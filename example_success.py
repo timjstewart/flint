@@ -20,10 +20,6 @@ def named_success_function(context: LintContext) -> bool:
     return True
 
 
-def named_failing_function(context: LintContext) -> bool:
-    return False
-
-
 def main():
     process_results(
         define_linter(
@@ -37,7 +33,6 @@ def main():
                     children=[
                         # The "%s" argument will be replaced by the full path
                         # to the file being linted.
-                        shell_command(["funions", "%s"]),
                         shell_command(["wc", "-l", "%s"]),
                     ],
                 ),
@@ -48,7 +43,7 @@ def main():
                         # sample data contains some .json files so we specify a
                         # child linter to lint those files.
                         files(
-                            glob="*.json",
+                            glob="menu.json",
                             children=[
                                 # Make sure the JSON in these files are well-formed
                                 # and that they follow a jsonschema schema.
@@ -73,16 +68,12 @@ def main():
                         )
                     ],
                 ),
-                directories(glob="sample_data/subdir_*", min_matches=1, max_matches=3),
+                directories(glob="sample_data/subdir_*", min_matches=1, max_matches=4),
                 directory(path="json_schemas", optional=True),
                 directory(path="optional", optional=True),
-                directory(path="must", optional=False),
                 files(glob="*.json", optional=True),
                 function(lambda c: None, name="succeed with None"),
-                function(lambda c: "foo", name="fail with foo"),
-                function(lambda c: False, name="bool_fail_func"),
                 function(lambda c: True, name="bool_success_func"),
-                function(named_failing_function),
                 function(named_success_function),
             ],
         ).run(Path(Path.cwd() / "example_dir")),

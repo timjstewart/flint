@@ -4,7 +4,9 @@ If you have a collection of files and directories whose structure and content yo
 
 # Examples
 
-See example.py for an example.
+See `example.py` for an example of a script that will fail and exit with 1.
+
+See `example_success.py` for an example of a script that will succeed and exit with 0.
 
 # Functions
 

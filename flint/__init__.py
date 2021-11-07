@@ -177,8 +177,8 @@ class LintableGlobMatches(Lintable):
     def __init__(
         self,
         glob: str,
-        max_matches: Optional[int] = None,
         min_matches: Optional[int] = None,
+        max_matches: Optional[int] = None,
     ) -> None:
         self.glob = glob
         self.max_matches = max_matches
@@ -287,8 +287,8 @@ class _Directories(LintableGlobMatches):
     def __init__(
         self,
         glob: str,
-        max_matches: Optional[int] = None,
         min_matches: Optional[int] = None,
+        max_matches: Optional[int] = None,
         children: Optional[List[Lintable]] = None,
     ) -> None:
         super().__init__(glob, min_matches, max_matches)
@@ -443,12 +443,14 @@ def print_results(linter_results: LinterResults, print_statistics: bool = True) 
     files = 0
     directories = 0
 
+    need_newline = False
     for obj, results in linter_results.items():
         if obj.is_dir():
             directories += 1
         else:
             files += 1
         if results:
+            need_newline = True
             for result in results:
                 if result.is_fatal():
                     errors += 1
@@ -457,7 +459,8 @@ def print_results(linter_results: LinterResults, print_statistics: bool = True) 
                 print(f"{str(result)}")
 
     if print_statistics:
-        print()
+        if need_newline:
+            print()
         print(f"Warnings:    {warnings}")
         print(f"Errors:      {errors}")
         print(f"Directories: {directories}")
@@ -467,4 +470,5 @@ def print_results(linter_results: LinterResults, print_statistics: bool = True) 
 
 def process_results(linter_results: LinterResults) -> None:
     print_results(linter_results)
-    sys.exit(1 if linter_results.failed() else 0)
+    exit_code = 1 if linter_results.failed() else 0
+    sys.exit(exit_code)
