@@ -94,26 +94,41 @@ class LintContext:
     directory is currently being linted.
     """
 
-    def __init__(self, path: Path, results: Optional[LinterResults] = None) -> None:
+    def __init__(
+        self,
+        path: Path,
+        results: Optional[LinterResults] = None,
+        properties: Optional[Dict[str, Dict[str, Any]]] = None,
+    ) -> None:
         self.path = path
         self.results = results or LinterResults()
-        self.properties = defaultdict(dict)
+        self.properties = properties if properties is not None else defaultdict(dict)
 
     def with_path(self, path: Path) -> Optional["LintContext"]:
-        return LintContext(path, self.results)
+        return LintContext(path, self.results, self.properties)
 
     def in_directory(self, directory: Path) -> Optional["LintContext"]:
-        return LintContext(directory, self.results) if directory.is_dir() else None
+        return (
+            LintContext(directory, self.results, self.properties)
+            if directory.is_dir()
+            else None
+        )
 
     def with_file(self, file: Path) -> Optional["LintContext"]:
-        return LintContext(file, self.results) if file.is_file() else None
+        return (
+            LintContext(file, self.results, self.properties) if file.is_file() else None
+        )
 
     def with_filename(self, filename: str) -> Optional["LintContext"]:
         return self.with_file(Path(self.path, filename))
 
     def cd(self, directory: str) -> Optional["LintContext"]:
         new_dir = Path(self.path / directory)
-        return LintContext(new_dir, self.results) if new_dir.is_dir() else None
+        return (
+            LintContext(new_dir, self.results, self.properties)
+            if new_dir.is_dir()
+            else None
+        )
 
     def warning(self, message: str) -> None:
         self.results.add(self.path, Warning(self.path, message))
@@ -135,6 +150,14 @@ class LintContext:
 
     def get_property(self, group: str, key: str, default_value: Any) -> None:
         return self.properties[group].get(key, default_value)
+
+    def append_property(self, group: str, key: str, value: Any) -> None:
+        current_value = self.get_property(group, key, [])
+        self.properties[group][key] = current_value + [value]
+
+    def extend_property(self, group: str, key: str, values: List[Any]) -> None:
+        current_value = self.get_property(group, key, [])
+        self.properties[group][key] = current_value + values
 
 
 class Lintable(ABC):
@@ -309,10 +332,14 @@ class _ShellCommand(Lintable):
 
 class _Linter:
     def __init__(
-        self, children: List[Lintable], strict_directory_contents: bool = True
+        self,
+        children: List[Lintable],
+        strict_directory_contents: bool = True,
+        print_properties: bool = False,
     ) -> None:
         self.children = list(children)
         self.strict_directory_contents = strict_directory_contents
+        self.print_properties = print_properties
 
     def run(self, root: Path) -> LinterResults:
         linted_map: Dict[Path, bool] = {entry: False for entry in root.iterdir()}
@@ -333,8 +360,20 @@ class _Linter:
                     fso_type = "directory" if fso.is_dir() else "file"
                     context.error(f"unexpected {fso_type} '{fso}'")
 
-        print(context.properties)
+        if self.print_properties:
+            self._print_properties(context)
         return context.results
+
+    def _print_properties(self, context: LintContext):
+        for group, key in context.properties.items():
+            print("+-", group)
+            for k, value in key.items():
+                print("   +-", k)
+                if isinstance(value, list):
+                    for item in value:
+                        print("      |-", item)
+                else:
+                    print("    Value:", value)
 
 
 def define_linter(children: List[Lintable], *args, **kwargs):
@@ -361,7 +400,7 @@ def shell_command(*args, **kwargs) -> Lintable:
     return _ShellCommand(*args, **kwargs)
 
 
-def print_results(linter_results: LinterResults, dump_properties=False) -> None:
+def print_results(linter_results: LinterResults, print_statistics: bool = True) -> None:
     warnings = 0
     errors = 0
     files = 0
@@ -379,15 +418,14 @@ def print_results(linter_results: LinterResults, dump_properties=False) -> None:
                 else:
                     warnings += 1
                 print(f"{str(result)}")
-    print()
-    print(f"Warnings:    {warnings}")
-    print(f"Errors:      {errors}")
-    print(f"Directories: {directories}")
-    print(f"Files:       {files}")
-    print(f"Passed:      {'no' if linter_results.failed() else 'yes'}")
 
-    if dump_properties:
-        print("TODO")
+    if print_statistics:
+        print()
+        print(f"Warnings:    {warnings}")
+        print(f"Errors:      {errors}")
+        print(f"Directories: {directories}")
+        print(f"Files:       {files}")
+        print(f"Passed:      {'no' if linter_results.failed() else 'yes'}")
 
 
 def process_results(linter_results: LinterResults) -> None:

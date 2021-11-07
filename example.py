@@ -41,7 +41,7 @@ def main():
                                 json_content(
                                     children=[
                                         collect_values(
-                                            JsonPath.compile("/menu/items"),
+                                            JsonPath.compile("/menu/items/[]"),
                                             "menu",
                                             "items",
                                         ),

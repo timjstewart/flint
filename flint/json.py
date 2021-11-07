@@ -40,15 +40,19 @@ class JsonPath:
         current = [json_object]
         try:
             for element in self.elements:
-                # Array Index
+                # Array index
                 if isinstance(element, int):
                     if isinstance(current[0], list):
                         current = [x[element] for x in current]
                     else:
                         return []
+                # Object property lookup
                 elif isinstance(element, str):
                     if isinstance(current[0], dict):
                         current = [x[element] for x in current]
+                    elif isinstance(current[0], list):
+                        if element == "[]":
+                            current = [elem for elems in current for elem in elems]
                     else:
                         return []
         except KeyError as ex:
@@ -69,14 +73,10 @@ class _JsonCollectValues(JsonRule):
         self.optional = optional
 
     def lint(self, json_obj: JSON, context: LintContext) -> None:
-        found = False
+        found = []
         for match in self.json_path.matches(context, json_obj):
-            found = True
-            context.set_property(
-                self.group,
-                self.key,
-                context.get_property(self.group, self.key, []).append(match),
-            )
+            found.append(match)
+        context.extend_property(self.group, self.key, found)
         if not self.optional and not found:
             context.error(f"JsonPath {self.json_path} did not match any elements")
 
