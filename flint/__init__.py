@@ -3,17 +3,12 @@ flint.py - a module that allows you to define linting operations to perform on
            a directory and its subdirectories and files.
 """
 import sys
-import json
 import subprocess
 
 from abc import ABC, abstractmethod
 from collections import defaultdict
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple, Union
-
-import jsonschema
-
-JSON = Dict[str, Union[str, int, List["JSON"], "JSON"]]
+from typing import Dict, List, Optional, Tuple, Union, Any
 
 
 class LinterResult(ABC):
@@ -93,7 +88,7 @@ class LinterResults:
         return False
 
 
-class _LintContext:
+class LintContext:
     """
     Keeps track of LinterResults encountered during linting and what file or
     directory is currently being linted.
@@ -102,22 +97,23 @@ class _LintContext:
     def __init__(self, path: Path, results: Optional[LinterResults] = None) -> None:
         self.path = path
         self.results = results or LinterResults()
+        self.properties = defaultdict(dict)
 
-    def with_path(self, path: Path) -> Optional["_LintContext"]:
-        return _LintContext(path, self.results)
+    def with_path(self, path: Path) -> Optional["LintContext"]:
+        return LintContext(path, self.results)
 
-    def in_directory(self, directory: Path) -> Optional["_LintContext"]:
-        return _LintContext(directory, self.results) if directory.is_dir() else None
+    def in_directory(self, directory: Path) -> Optional["LintContext"]:
+        return LintContext(directory, self.results) if directory.is_dir() else None
 
-    def with_file(self, file: Path) -> Optional["_LintContext"]:
-        return _LintContext(file, self.results) if file.is_file() else None
+    def with_file(self, file: Path) -> Optional["LintContext"]:
+        return LintContext(file, self.results) if file.is_file() else None
 
-    def with_filename(self, filename: str) -> Optional["_LintContext"]:
+    def with_filename(self, filename: str) -> Optional["LintContext"]:
         return self.with_file(Path(self.path, filename))
 
-    def cd(self, directory: str) -> Optional["_LintContext"]:
+    def cd(self, directory: str) -> Optional["LintContext"]:
         new_dir = Path(self.path / directory)
-        return _LintContext(new_dir, self.results) if new_dir.is_dir() else None
+        return LintContext(new_dir, self.results) if new_dir.is_dir() else None
 
     def warning(self, message: str) -> None:
         self.results.add(self.path, Warning(self.path, message))
@@ -125,7 +121,7 @@ class _LintContext:
     def error(self, message: str) -> None:
         self.results.add(self.path, Error(self.path, message))
 
-    def touch_path(self) -> None:
+    def mark_linted(self) -> None:
         """
         Records that the current file or directory was handled by at least linter.
 
@@ -134,16 +130,22 @@ class _LintContext:
         """
         self.results.path_map[self.path].extend([])
 
+    def set_property(self, group: str, key: str, value: Any) -> None:
+        self.properties[group][key] = value
 
-class _Lintable(ABC):
+    def get_property(self, group: str, key: str, default_value: Any) -> None:
+        return self.properties.get(group).get(key, default_value)
+
+
+class Lintable(ABC):
     """An object that can be linted"""
 
     @abstractmethod
-    def lint(self, context: _LintContext) -> None:
+    def lint(self, context: LintContext) -> None:
         pass
 
 
-class LintableGlobMatches(_Lintable):
+class LintableGlobMatches(Lintable):
     """
     Multiple objects can match a glob. This object encapsulates logic for
     limits on matches.
@@ -159,7 +161,7 @@ class LintableGlobMatches(_Lintable):
         self.max_matches = max_matches
         self.min_matches = min_matches
 
-    def _check_limits(self, context: _LintContext, num_lintables: int) -> _LintContext:
+    def _check_limits(self, context: LintContext, num_lintables: int) -> LintContext:
 
         if self.min_matches is not None and num_lintables < self.min_matches:
             context.error(
@@ -176,7 +178,7 @@ class LintableGlobMatches(_Lintable):
         return context
 
 
-class _Directory(_Lintable):
+class _Directory(Lintable):
     """
     A directory that can be linted.
 
@@ -187,13 +189,13 @@ class _Directory(_Lintable):
         self,
         path: str,
         optional: bool = False,
-        children: Optional[List[_Lintable]] = None,
+        children: Optional[List[Lintable]] = None,
     ) -> None:
         self.path = path
         self.optional = optional
         self.children = list(children) if children else []
 
-    def lint(self, context: _LintContext) -> None:
+    def lint(self, context: LintContext) -> None:
         my_context = context.cd(self.path)
         if not my_context:
             if not self.optional:
@@ -202,29 +204,29 @@ class _Directory(_Lintable):
                 )
             return
 
-        my_context.touch_path()
+        my_context.mark_linted()
         for child in self.children:
             child.lint(my_context)
 
 
-class _File(_Lintable):
+class _File(Lintable):
     def __init__(
         self,
         path: str,
         optional: bool = False,
-        children: Optional[List[_Lintable]] = None,
+        children: Optional[List[Lintable]] = None,
     ) -> None:
         self.path = path
         self.optional = optional
         self.children = list(children) if children else []
 
-    def lint(self, context: _LintContext) -> None:
+    def lint(self, context: LintContext) -> None:
         file_context = context.with_filename(self.path)
         if not file_context:
             context.error(f"Could not find file: {self.path}")
             return
 
-        file_context.touch_path()
+        file_context.mark_linted()
 
         for child in self.children:
             child.lint(file_context)
@@ -241,17 +243,17 @@ class _Files(LintableGlobMatches):
         min_matches: Optional[int] = None,
         max_matches: Optional[int] = None,
         optional: Optional[bool] = False,
-        children: Optional[List[_Lintable]] = None,
+        children: Optional[List[Lintable]] = None,
     ) -> None:
         super().__init__(glob, min_matches, max_matches)
         self.children = list(children) if children else []
 
-    def lint(self, context: _LintContext) -> None:
+    def lint(self, context: LintContext) -> None:
         matches = [match for match in context.path.glob(self.glob) if match.is_file()]
 
         for match in matches:
             match_context = context.with_file(match)
-            match_context.touch_path()
+            match_context.mark_linted()
             for child in self.children:
                 child.lint(match_context)
 
@@ -264,12 +266,12 @@ class _Directories(LintableGlobMatches):
         glob: str,
         max_matches: Optional[int] = None,
         min_matches: Optional[int] = None,
-        children: Optional[List[_Lintable]] = None,
+        children: Optional[List[Lintable]] = None,
     ) -> None:
         super().__init__(glob, min_matches, max_matches)
         self.children = list(children) if children else []
 
-    def lint(self, context: _LintContext) -> None:
+    def lint(self, context: LintContext) -> None:
         matches = [match for match in context.path.glob(self.glob) if match.is_dir()]
 
         self._check_limits(context, len(matches))
@@ -277,84 +279,16 @@ class _Directories(LintableGlobMatches):
         for match in matches:
             child_context = context.with_path(match)
             if child_context:
-                child_context.touch_path()
+                child_context.mark_linted()
                 for child in self.children:
                     child.lint(child_context)
 
 
-class JsonRule(ABC):
-    """
-    A linting rule that is applied to a JSON object.
-
-    This class is not private because it is intended for extension by users.
-    """
-
-    @abstractmethod
-    def lint(self, json_obj: JSON, context: _LintContext) -> None:
-        pass
-
-
-class _JsonFollowsSchema(JsonRule):
-    """
-    Validates JSON content against a JSON schema.
-
-    See: https://json-schema.org/
-    """
-
-    # Try not to load the same schema more than once
-    SCHEMA_CACHE: Dict[Path, JSON] = {}
-
-    def __init__(self, schema_filename: str) -> None:
-        self.schema_filename = schema_filename
-
-    def lint(self, json_obj: JSON, context: _LintContext) -> None:
-        path = Path(self.schema_filename)
-        if not path.is_absolute():
-            path = Path(Path.cwd() / self.schema_filename)
-
-        if path not in self.SCHEMA_CACHE:
-            try:
-                self.SCHEMA_CACHE[path] = json.loads(path.read_text())
-            except json.decoder.JSONDecodeError as ex:
-                context.error(f"Malformed JSON found in schema file: {path} - {ex}")
-                return
-            except FileNotFoundError as ex:
-                context.error(f"Could not find JSON schema file: {path} - {ex}")
-                return
-            except jsonschema.exceptions.SchemaError as ex:
-                context.error(f"Invalid JSON schema file: {path} - {ex.message}")
-                return
-
-        schema = self.SCHEMA_CACHE[path]
-        try:
-            jsonschema.validate(instance=json_obj, schema=schema)
-        except jsonschema.exceptions.ValidationError as ex:
-            context.error(f"{ex.message} JSON: {ex.instance}")
-
-
-class _JsonContent(_Lintable):
-    def __init__(self, children: Optional[List[JsonRule]] = None) -> None:
-        self.children = list(children) if children else []
-
-    def lint(self, context: _LintContext) -> None:
-        if not context.path.is_file():
-            context.error(f"Can only check JSON content for files:  {context.path}")
-
-        json_text = context.path.read_text()
-        try:
-            json_object = json.loads(json_text)
-        except json.decoder.JSONDecodeError as ex:
-            context.error(str(ex))
-        else:
-            for child in self.children:
-                child.lint(json_object, context)
-
-
-class _ShellCommand(_Lintable):
+class _ShellCommand(Lintable):
     def __init__(self, command_line: List[str]) -> None:
         self.command_line = list(command_line)
 
-    def lint(self, context: _LintContext) -> None:
+    def lint(self, context: LintContext) -> None:
         if not context.path.is_file():
             context.error(f"{context.path} is not a file")
         else:
@@ -375,7 +309,7 @@ class _ShellCommand(_Lintable):
 
 class _Linter:
     def __init__(
-        self, children: List[_Lintable], strict_directory_contents: bool = True
+        self, children: List[Lintable], strict_directory_contents: bool = True
     ) -> None:
         self.children = list(children)
         self.strict_directory_contents = strict_directory_contents
@@ -384,7 +318,7 @@ class _Linter:
         linted_map: Dict[Path, bool] = {entry: False for entry in root.iterdir()}
 
         # Lint selected files and directories
-        context = _LintContext(root)
+        context = LintContext(root)
 
         for child in self.children:
             child.lint(context)
@@ -402,39 +336,31 @@ class _Linter:
         return context.results
 
 
-def define_linter(children: List[_Lintable], *args, **kwargs):
+def define_linter(children: List[Lintable], *args, **kwargs):
     return _Linter(children=children, *args, **kwargs)
 
 
-def directory(*args, **kwargs) -> _Lintable:
+def directory(*args, **kwargs) -> Lintable:
     return _Directory(*args, **kwargs)
 
 
-def directories(*args, **kwargs) -> _Lintable:
+def directories(*args, **kwargs) -> Lintable:
     return _Directories(*args, **kwargs)
 
 
-def files(*args, **kwargs) -> _Lintable:
+def files(*args, **kwargs) -> Lintable:
     return _Files(*args, **kwargs)
 
 
-def file(*args, **kwargs) -> _Lintable:
+def file(*args, **kwargs) -> Lintable:
     return _File(*args, **kwargs)
 
 
-def json_content(*args, **kwargs) -> _Lintable:
-    return _JsonContent(*args, **kwargs)
-
-
-def follows_schema(schema_file_name: str) -> JsonRule:
-    return _JsonFollowsSchema(schema_file_name)
-
-
-def shell_command(*args, **kwargs) -> _Lintable:
+def shell_command(*args, **kwargs) -> Lintable:
     return _ShellCommand(*args, **kwargs)
 
 
-def print_results(linter_results: LinterResults) -> None:
+def print_results(linter_results: LinterResults, dump_properties=False) -> None:
     warnings = 0
     errors = 0
     files = 0
@@ -458,6 +384,9 @@ def print_results(linter_results: LinterResults) -> None:
     print(f"Directories: {directories}")
     print(f"Files:       {files}")
     print(f"Passed:      {'no' if linter_results.failed() else 'yes'}")
+
+    if dump_properties:
+        print("TODO")
 
 
 def process_results(linter_results: LinterResults) -> None:

@@ -5,11 +5,14 @@ from flint import (
     file,
     files,
     directories,
-    json_content,
     define_linter,
-    follows_schema,
     print_results,
     shell_command,
+)
+
+from flint.json import (
+    follows_schema,
+    json_content,
 )
 
 
