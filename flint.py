@@ -2,6 +2,7 @@
 flint.py - a module that allows you to define linting operations to perform on
            a directory and its subdirectories and files.
 """
+import sys
 import json
 import subprocess
 
@@ -23,11 +24,43 @@ class LintResult(ABC):
     def __init__(self, path: Path) -> None:
         self.path = path
 
+    def is_fatal(self):
+        return False
+
     def __repr__(self):
         return f"{self.__class__.__name__}({self.path})"
 
     def __str__(self):
         return f"{self.__class__.__name__}: {self.path}"
+
+
+class Error(LintResult):
+    """
+    An error discovered by a linting operation.
+    """
+
+    def __init__(self, path: Path, error: str) -> None:
+        super().__init__(path)
+        self.error = error
+
+    def is_fatal(self):
+        return True
+
+    def __str__(self):
+        return f"{self.__class__.__name__.lower()}: {self.path}: {self.error}"
+
+
+class Warning(LintResult):
+    """
+    An error discovered by a linting operation.
+    """
+
+    def __init__(self, path: Path, warning: str) -> None:
+        super().__init__(path)
+        self.warning = warning
+
+    def __str__(self):
+        return f"{self.__class__.__name__.lower()}: {self.path}: {self.warning}"
 
 
 class LinterResults:
@@ -55,31 +88,11 @@ class LinterResults:
     def linted_paths(self) -> List[Path]:
         return list(self.path_map.keys())
 
-
-class Error(LintResult):
-    """
-    An error discovered by a linting operation.
-    """
-
-    def __init__(self, path: Path, error: str) -> None:
-        super().__init__(path)
-        self.error = error
-
-    def __str__(self):
-        return f"{self.__class__.__name__.lower()}: {self.path}: {self.error}"
-
-
-class Warning(LintResult):
-    """
-    An error discovered by a linting operation.
-    """
-
-    def __init__(self, path: Path, warning: str) -> None:
-        super().__init__(path)
-        self.warning = warning
-
-    def __str__(self):
-        return f"{self.__class__.__name__.lower()}: {self.path}: {self.warning}"
+    def failed(self) -> bool:
+        for result in self.results():
+            if result.is_fatal():
+                return True
+        return False
 
 
 class _LintContext:
@@ -212,6 +225,10 @@ class _File(_Lintable):
 
     def lint(self, context: _LintContext) -> None:
         file_context = context.with_filename(self.path)
+        if not file_context:
+            context.error(f"Could not find file: {self.path}")
+            return
+
         file_context.touch_path()
 
         for child in self.children:
@@ -265,6 +282,7 @@ class _Directories(LintableGlobMatches):
         for match in matches:
             child_context = context.with_path(match)
             if child_context:
+                child_context.touch_path()
                 for child in self.children:
                     child.lint(child_context)
 
@@ -356,10 +374,8 @@ class _ShellCommand(_Lintable):
                         f" returned from '{' '.join(command_line)}'."
                         f" Output: {output.stderr.decode('utf-8')}"
                     )
-            except FileNotFoundError as ex:
-                context.error(f"{str(ex)}")
-            except subprocess.CalledProcessError as ex:
-                context.error(f"{str(ex)}")
+            except (FileNotFoundError, subprocess.CalledProcessError) as ex:
+                context.error(f"Error running: '{' '.join(command_line)}' {str(ex)}")
 
 
 class _Linter:
@@ -386,7 +402,7 @@ class _Linter:
             for fso, linted in linted_map.items():
                 if not linted:
                     fso_type = "directory" if fso.is_dir() else "file"
-                    context.warning(f"unexpected {fso_type} '{fso}'")
+                    context.error(f"unexpected {fso_type} '{fso}'")
 
         return context.results
 
@@ -421,3 +437,33 @@ def follows_schema(schema_file_name: str) -> JsonRule:
 
 def shell_command(*args, **kwargs) -> _Lintable:
     return _ShellCommand(*args, **kwargs)
+
+
+def print_results(linter_results: LinterResults) -> None:
+    warnings = 0
+    errors = 0
+    files = 0
+    directories = 0
+
+    for obj, results in linter_results.items():
+        if obj.is_dir():
+            directories += 1
+        else:
+            files += 1
+        if results:
+            for result in results:
+                if result.is_fatal():
+                    errors += 1
+                else:
+                    warnings += 1
+                print(f"{str(result)}")
+    print()
+    print(f"Warnings:    {warnings}")
+    print(f"Errors:      {errors}")
+    print(f"Directories: {directories}")
+    print(f"Files:       {files}")
+
+
+def process_results(linter_results: LinterResults) -> None:
+    print_results(linter_results)
+    sys.exit(1 if linter_results.failed() else 0)
