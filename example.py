@@ -4,13 +4,23 @@ from flint import (
     directory,
     file,
     files,
+    function,
     directories,
     define_linter,
     print_results,
     shell_command,
+    LintContext,
 )
 
 from flint.json import follows_schema, json_content, collect_values, JsonPath
+
+
+def named_success_function(context: LintContext) -> bool:
+    return True
+
+
+def named_failing_function(context: LintContext) -> bool:
+    return False
 
 
 def main():
@@ -19,10 +29,13 @@ def main():
             # If you set this to False, any files or directories that are not
             # linted by one of the defined linters, will not cause an error.
             strict_directory_contents=True,
+            print_properties=False,
             children=[
                 file(
                     path="lorem.txt",
                     children=[
+                        # The "%s" argument will be replaced by the full path
+                        # to the file being linted.
                         shell_command(["funions", "%s"]),
                         shell_command(["wc", "-l", "%s"]),
                     ],
@@ -41,9 +54,14 @@ def main():
                                 json_content(
                                     children=[
                                         collect_values(
-                                            JsonPath.compile("/menu/items/[]"),
+                                            JsonPath.compile("/menu/items/*"),
                                             "menu",
                                             "items",
+                                        ),
+                                        collect_values(
+                                            JsonPath.compile("/menu/items/0"),
+                                            "menu",
+                                            "first_item",
                                         ),
                                         follows_schema(
                                             "example_dir/json_schemas/menu.schema"
@@ -59,8 +77,14 @@ def main():
                 directory(path="optional", optional=True),
                 directory(path="must", optional=False),
                 files(glob="*.json", optional=True),
+                function(lambda c: None, name="succeed with None"),
+                function(lambda c: "foo", name="fail with foo"),
+                function(lambda c: False, name="bool_fail_func"),
+                function(lambda c: True, name="bool_success_func"),
+                function(named_failing_function),
+                function(named_success_function),
             ],
-        ).run(Path(Path.cwd() / "example_dir"))
+        ).run(Path(Path.cwd() / "example_dir")),
     )
 
 

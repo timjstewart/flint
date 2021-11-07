@@ -25,13 +25,20 @@ class JsonRule(ABC):
         pass
 
 
+def try_as_int(s: str) -> Union[str, int]:
+    try:
+        return int(s)
+    except ValueError:
+        return s
+
+
 class JsonPath:
     def __init__(self, elements: List[JsonPathElement]) -> None:
         self.elements = list(elements)
 
     @staticmethod
     def compile(s: str) -> "JsonPath":
-        elements = [x for x in s.split("/") if x]
+        elements = [try_as_int(x) for x in s.split("/") if x]
         if not elements:
             raise ValueError(f"could not compile '{s}' into JsonPath")
         return JsonPath(elements)
@@ -51,7 +58,7 @@ class JsonPath:
                     if isinstance(current[0], dict):
                         current = [x[element] for x in current]
                     elif isinstance(current[0], list):
-                        if element == "[]":
+                        if element == "*":
                             current = [elem for elems in current for elem in elems]
                     else:
                         return []

@@ -8,7 +8,7 @@ import subprocess
 from abc import ABC, abstractmethod
 from collections import defaultdict
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple, Any
+from typing import Dict, List, Optional, Tuple, Any, Callable
 
 
 class LinterResult(ABC):
@@ -148,7 +148,7 @@ class LintContext:
     def set_property(self, group: str, key: str, value: Any) -> None:
         self.properties[group][key] = value
 
-    def get_property(self, group: str, key: str, default_value: Any) -> None:
+    def get_property(self, group: str, key: str, default_value: Any = None) -> None:
         return self.properties[group].get(key, default_value)
 
     def append_property(self, group: str, key: str, value: Any) -> None:
@@ -309,6 +309,11 @@ class _Directories(LintableGlobMatches):
 
 class _ShellCommand(Lintable):
     def __init__(self, command_line: List[str]) -> None:
+        """
+        All occurences of "%s" anywhere in the command line will be replaced by
+        the full path name of the file being linted (the parent of this
+        bject).
+        """
         self.command_line = list(command_line)
 
     def lint(self, context: LintContext) -> None:
@@ -328,6 +333,25 @@ class _ShellCommand(Lintable):
                     )
             except (FileNotFoundError, subprocess.CalledProcessError) as ex:
                 context.error(f"Error running: '{' '.join(command_line)}' {str(ex)}")
+
+
+class _Function(Lintable):
+
+    FUNCTION_TYPE = Callable[[LintContext], Optional[str]]
+
+    def __init__(self, function: "_Function.FUNCTION_TYPE", name: str = None) -> None:
+        self.name = name if name is not None else function.__name__
+        self.function = function
+
+    def lint(self, context: LintContext) -> None:
+        result = self.function(context)
+        if isinstance(result, str):
+            context.error(f"function: '{self.name}' failed with '{result}'.")
+        elif isinstance(result, bool):
+            if not result:
+                context.error(f"function: '{self.name}' failed.")
+        elif isinstance(result, int) and result:
+            context.error(f"function: '{self.name}' failed with return code: {result}.")
 
 
 class _Linter:
@@ -396,8 +420,21 @@ def file(*args, **kwargs) -> Lintable:
     return _File(*args, **kwargs)
 
 
+def function(*args, **kwargs) -> Lintable:
+    return _Function(*args, **kwargs)
+
+
 def shell_command(*args, **kwargs) -> Lintable:
     return _ShellCommand(*args, **kwargs)
+
+
+shell_command.__doc__ = _ShellCommand.__doc__
+function.__doc__ = _Function.__doc__
+file.__doc__ = _File.__doc__
+files.__doc__ = _Files.__doc__
+directory.__doc__ = _Directory.__doc__
+directories.__doc__ = _Directories.__doc__
+define_linter.__doc__ = _Linter.__doc__
 
 
 def print_results(linter_results: LinterResults, print_statistics: bool = True) -> None:
