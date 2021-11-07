@@ -16,7 +16,7 @@ import jsonschema
 JSON = Dict[str, Union[str, int, List["JSON"], "JSON"]]
 
 
-class LintResult(ABC):
+class LinterResult(ABC):
     """
     A single result from a linting operation.
     """
@@ -34,7 +34,7 @@ class LintResult(ABC):
         return f"{self.__class__.__name__}: {self.path}"
 
 
-class Error(LintResult):
+class Error(LinterResult):
     """
     An error discovered by a linting operation.
     """
@@ -50,7 +50,7 @@ class Error(LintResult):
         return f"{self.__class__.__name__.lower()}: {self.path}: {self.error}"
 
 
-class Warning(LintResult):
+class Warning(LinterResult):
     """
     An error discovered by a linting operation.
     """
@@ -65,24 +65,22 @@ class Warning(LintResult):
 
 class LinterResults:
     """
-    A map from the linted file or directory to a list of LintResults for that
-    file or directory.
+    A collection of LinterResults.
+
+    LinterResults are represented as a map from the linted file or directory to
+    a list of LinterResults for that file or directory.
     """
 
-    def __init__(self, path_map: Optional[Dict[Path, List[LintResult]]] = None) -> None:
-        self.path_map = path_map if path_map else defaultdict(list)
+    def __init__(self) -> None:
+        self.path_map = defaultdict(list)
 
-    def update(self, other: "LinterResults") -> None:
-        for k, v in other.path_map.items():
-            self.path_map[k].extend(v)
-
-    def add(self, path: Path, result: LintResult) -> None:
+    def add(self, path: Path, result: LinterResult) -> None:
         self.path_map[path].append(result)
 
-    def results(self) -> List[LintResult]:
+    def results(self) -> List[LinterResult]:
         return [result for results in self.path_map.values() for result in results]
 
-    def items(self) -> List[Tuple[Path, List[LintResult]]]:
+    def items(self) -> List[Tuple[Path, List[LinterResult]]]:
         return list(self.path_map.items())
 
     def linted_paths(self) -> List[Path]:
@@ -104,9 +102,6 @@ class _LintContext:
     def __init__(self, path: Path, results: Optional[LinterResults] = None) -> None:
         self.path = path
         self.results = results or LinterResults()
-
-    def update_results(self, results: LinterResults) -> None:
-        self.results.update(results)
 
     def with_path(self, path: Path) -> Optional["_LintContext"]:
         return _LintContext(path, self.results)
