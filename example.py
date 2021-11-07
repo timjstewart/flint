@@ -10,10 +10,7 @@ from flint import (
     shell_command,
 )
 
-from flint.json import (
-    follows_schema,
-    json_content,
-)
+from flint.json import follows_schema, json_content, collect_values, JsonPath
 
 
 def main():
@@ -43,7 +40,14 @@ def main():
                                 # and that they follow a jsonschema schema.
                                 json_content(
                                     children=[
-                                        follows_schema("json_schemas/menu.schema")
+                                        collect_values(
+                                            JsonPath.compile("/menu/items"),
+                                            "menu",
+                                            "items",
+                                        ),
+                                        follows_schema(
+                                            "example_dir/json_schemas/menu.schema"
+                                        ),
                                     ]
                                 )
                             ],

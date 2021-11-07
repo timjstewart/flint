@@ -8,7 +8,7 @@ import subprocess
 from abc import ABC, abstractmethod
 from collections import defaultdict
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple, Union, Any
+from typing import Dict, List, Optional, Tuple, Any
 
 
 class LinterResult(ABC):
@@ -134,7 +134,7 @@ class LintContext:
         self.properties[group][key] = value
 
     def get_property(self, group: str, key: str, default_value: Any) -> None:
-        return self.properties.get(group).get(key, default_value)
+        return self.properties[group].get(key, default_value)
 
 
 class Lintable(ABC):
@@ -333,6 +333,7 @@ class _Linter:
                     fso_type = "directory" if fso.is_dir() else "file"
                     context.error(f"unexpected {fso_type} '{fso}'")
 
+        print(context.properties)
         return context.results
 
 
