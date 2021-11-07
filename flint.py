@@ -462,6 +462,7 @@ def print_results(linter_results: LinterResults) -> None:
     print(f"Errors:      {errors}")
     print(f"Directories: {directories}")
     print(f"Files:       {files}")
+    print(f"Passed:      {'no' if linter_results.failed() else 'yes'}")
 
 
 def process_results(linter_results: LinterResults) -> None:
