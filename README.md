@@ -39,3 +39,11 @@ Creates a linter that can operate on JSON content to ensure that it adheres to a
 ## shell_command
 
 Creates a linter that runs a shell command on a file and raises errors if the command fails.
+
+## function
+
+Creates a linter that takes a function or a lambda.
+
+If the function or lambda returns a `str`, the returned string is considered an error message.
+If the function or lambda returns a `bool` and the bool is False, the False is taken as a failure.
+If the function or lambda returns an int and the `int` is not zero, the False is taken as a failure.
