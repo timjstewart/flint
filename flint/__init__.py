@@ -380,7 +380,8 @@ class LinterArgs:
 
         args = parser.parse_args()
         return LinterArgs(
-            directory=args.directory, schema_directories=args.schema_directories
+            directory=args.directory,
+            schema_directories=[Path(x) for x in args.schema_directories],
         )
 
     def __str__(self) -> str:
@@ -507,7 +508,3 @@ def process_results(linter_results: LinterResults) -> None:
     print_results(linter_results)
     exit_code = 1 if linter_results.failed() else 0
     sys.exit(exit_code)
-
-
-if __name__ == "__main__":
-    print(LinterArgs.parse_arguments(sys.argv[1:]))

@@ -61,7 +61,7 @@ def main():
                                             "first_item",
                                         ),
                                         follows_schema(
-                                            "example_dir/json_schemas/menu.schema"
+                                            "menu.schema"
                                         ),
                                     ]
                                 )
@@ -78,7 +78,10 @@ def main():
                 function(named_success_function),
             ],
         ).run(LinterArgs(
-            directory=Path(Path.cwd() / "example_dir")
+            directory=Path(Path.cwd() / "example_dir"),
+            schema_directories=[
+                Path("example_dir/json_schemas")
+                ]
             ))
     )
 

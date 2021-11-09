@@ -102,28 +102,61 @@ class _JsonFollowsSchema(JsonRule):
         self.schema_filename = schema_filename
 
     def lint(self, json_obj: JSON, context: LintContext) -> None:
-        path = Path(self.schema_filename)
-        if not path.is_absolute():
-            path = Path(Path.cwd() / self.schema_filename)
-
-        if path not in self.SCHEMA_CACHE:
-            try:
-                self.SCHEMA_CACHE[path] = json.loads(path.read_text())
-            except json.decoder.JSONDecodeError as ex:
-                context.error(f"Malformed JSON found in schema file: {path} - {ex}")
-                return
-            except FileNotFoundError as ex:
-                context.error(f"Could not find JSON schema file: {path} - {ex}")
-                return
-            except jsonschema.exceptions.SchemaError as ex:
-                context.error(f"Invalid JSON schema file: {path} - {ex.message}")
-                return
-
-        schema = self.SCHEMA_CACHE[path]
+        schema = self.load_schema_file(Path(self.schema_filename), context)
+        if schema is None:
+            return
         try:
             jsonschema.validate(instance=json_obj, schema=schema)
         except jsonschema.exceptions.ValidationError as ex:
             context.error(f"{ex.message} JSON: {ex.instance}")
+
+    @staticmethod
+    def find_schema_file(
+            path: Path,
+            context: LintContext
+            ) -> Optional[Path]:
+        if path.is_absolute():
+            return path
+
+        search_paths = [Path.cwd()]
+        for schema_dir in context.args.schema_directories:
+            if schema_dir.is_absolute():
+                search_paths.append(Path(schema_dir))
+            else:
+                search_paths.append(Path(Path.cwd(), Path(schema_dir)))
+
+        for search_path in search_paths:
+            try_path = Path(search_path, path)
+            if try_path.is_file():
+                return try_path
+
+        return None
+
+    @staticmethod
+    def load_schema_file(
+            path: Path,
+            context: LintContext
+            ) -> Optional[JSON]:
+        result = _JsonFollowsSchema.SCHEMA_CACHE.get(path, None)
+        if result is None:
+            schema_path = _JsonFollowsSchema.find_schema_file(path, context)
+            if schema_path:
+                try:
+                    result = json.loads(schema_path.read_text())
+                    _JsonFollowsSchema.SCHEMA_CACHE[path] = result
+                    return result
+                except json.decoder.JSONDecodeError as ex:
+                    context.error(f"Malformed JSON found in schema file: {schema_path} - {ex}")
+                    return None
+                except FileNotFoundError as ex:
+                    context.error(f"Could not find JSON schema file: {schema_path} - {ex}")
+                    return None
+                except jsonschema.exceptions.SchemaError as ex:
+                    context.error(f"Invalid JSON schema file: {schema_path} - {ex.message}")
+                    return None
+            else:
+                context.error(f"Could not find JSON schema file: {path} in {','.join(str(p) for p in context.args.schema_directories)}")
+        return result
 
 
 class _JsonContent(Lintable):
