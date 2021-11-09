@@ -4,11 +4,12 @@ flint.py - a module that allows you to define linting operations to perform on
 """
 import sys
 import subprocess
+import argparse
 
 from abc import ABC, abstractmethod
 from collections import defaultdict
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple, Any, Callable
+from typing import Dict, List, Optional, Tuple, Any, Callable, Union
 
 
 class LinterResult(ABC):
@@ -97,26 +98,30 @@ class LintContext:
     def __init__(
         self,
         path: Path,
+        args: "LinterArgs",
         results: Optional[LinterResults] = None,
         properties: Optional[Dict[str, Dict[str, Any]]] = None,
     ) -> None:
         self.path = path
+        self.args = args
         self.results = results or LinterResults()
         self.properties = properties if properties is not None else defaultdict(dict)
 
     def with_path(self, path: Path) -> Optional["LintContext"]:
-        return LintContext(path, self.results, self.properties)
+        return LintContext(path, self.args, self.results, self.properties)
 
     def in_directory(self, directory: Path) -> Optional["LintContext"]:
         return (
-            LintContext(directory, self.results, self.properties)
+            LintContext(directory, self.args, self.results, self.properties)
             if directory.is_dir()
             else None
         )
 
     def with_file(self, file: Path) -> Optional["LintContext"]:
         return (
-            LintContext(file, self.results, self.properties) if file.is_file() else None
+            LintContext(file, self.args, self.results, self.properties)
+            if file.is_file()
+            else None
         )
 
     def with_filename(self, filename: str) -> Optional["LintContext"]:
@@ -125,7 +130,7 @@ class LintContext:
     def cd(self, directory: str) -> Optional["LintContext"]:
         new_dir = Path(self.path / directory)
         return (
-            LintContext(new_dir, self.results, self.properties)
+            LintContext(new_dir, self.args, self.results, self.properties)
             if new_dir.is_dir()
             else None
         )
@@ -354,6 +359,34 @@ class _Function(Lintable):
             context.error(f"function: '{self.name}' failed with return code: {result}.")
 
 
+class LinterArgs:
+    def __init__(
+        self, directory: Optional[str], schema_directories: Optional[List[str]] = None
+    ) -> None:
+        self.directory = Path(directory) if directory else Path.cwd()
+        self.schema_directories = list(schema_directories) if schema_directories else []
+
+    @staticmethod
+    def parse_arguments(arguments: List[str]) -> Union[str, "LinterArgs"]:
+        parser = argparse.ArgumentParser(description="lint files and directories")
+
+        parser.add_argument("-d", "--directory", type=str, help="the directory to lint")
+        parser.add_argument(
+            "--schema-dir",
+            dest="schema_directories",
+            action="append",
+            help="a directory to look for schema files in.",
+        )
+
+        args = parser.parse_args()
+        return LinterArgs(
+            directory=args.directory, schema_directories=args.schema_directories
+        )
+
+    def __str__(self) -> str:
+        return f"directory: {self.directory} schema_dirs: {', '.join(self.schema_directories)}"
+
+
 class _Linter:
     def __init__(
         self,
@@ -365,11 +398,13 @@ class _Linter:
         self.strict_directory_contents = strict_directory_contents
         self.print_properties = print_properties
 
-    def run(self, root: Path) -> LinterResults:
-        linted_map: Dict[Path, bool] = {entry: False for entry in root.iterdir()}
+    def run(self, args: LinterArgs) -> LinterResults:
+        linted_map: Dict[Path, bool] = {
+            entry: False for entry in args.directory.iterdir()
+        }
 
         # Lint selected files and directories
-        context = LintContext(root)
+        context = LintContext(args.directory, args)
 
         for child in self.children:
             child.lint(context)
@@ -472,3 +507,7 @@ def process_results(linter_results: LinterResults) -> None:
     print_results(linter_results)
     exit_code = 1 if linter_results.failed() else 0
     sys.exit(exit_code)
+
+
+if __name__ == "__main__":
+    print(LinterArgs.parse_arguments(sys.argv[1:]))

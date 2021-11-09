@@ -11,6 +11,7 @@ from flint import (
     process_results,
     shell_command,
     LintContext,
+    LinterArgs
 )
 
 from flint.json import follows_schema, json_content, collect_values, JsonPath
@@ -76,7 +77,9 @@ def main():
                 function(lambda c: True, name="bool_success_func"),
                 function(named_success_function),
             ],
-        ).run(Path(Path.cwd() / "example_dir")),
+        ).run(LinterArgs(
+            directory=Path(Path.cwd() / "example_dir")
+            ))
     )
 
 
