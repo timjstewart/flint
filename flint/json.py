@@ -111,10 +111,7 @@ class _JsonFollowsSchema(JsonRule):
             context.error(f"{ex.message} JSON: {ex.instance}")
 
     @staticmethod
-    def find_schema_file(
-            path: Path,
-            context: LintContext
-            ) -> Optional[Path]:
+    def find_schema_file(path: Path, context: LintContext) -> Optional[Path]:
         if path.is_absolute():
             return path
 
@@ -133,10 +130,7 @@ class _JsonFollowsSchema(JsonRule):
         return None
 
     @staticmethod
-    def load_schema_file(
-            path: Path,
-            context: LintContext
-            ) -> Optional[JSON]:
+    def load_schema_file(path: Path, context: LintContext) -> Optional[JSON]:
         result = _JsonFollowsSchema.SCHEMA_CACHE.get(path, None)
         if result is None:
             schema_path = _JsonFollowsSchema.find_schema_file(path, context)
@@ -146,16 +140,24 @@ class _JsonFollowsSchema(JsonRule):
                     _JsonFollowsSchema.SCHEMA_CACHE[path] = result
                     return result
                 except json.decoder.JSONDecodeError as ex:
-                    context.error(f"Malformed JSON found in schema file: {schema_path} - {ex}")
+                    context.error(
+                        f"Malformed JSON found in schema file: {schema_path} - {ex}"
+                    )
                     return None
                 except FileNotFoundError as ex:
-                    context.error(f"Could not find JSON schema file: {schema_path} - {ex}")
+                    context.error(
+                        f"Could not find JSON schema file: {schema_path} - {ex}"
+                    )
                     return None
                 except jsonschema.exceptions.SchemaError as ex:
-                    context.error(f"Invalid JSON schema file: {schema_path} - {ex.message}")
+                    context.error(
+                        f"Invalid JSON schema file: {schema_path} - {ex.message}"
+                    )
                     return None
             else:
-                context.error(f"Could not find JSON schema file: {path} in {','.join(str(p) for p in context.args.schema_directories)}")
+                context.error(
+                    f"Could not find JSON schema file: {path} in {','.join(str(p) for p in context.args.schema_directories)}"
+                )
         return result
 
 
